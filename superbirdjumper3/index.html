@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Superbirdjumper3</title>
+    <script src="https://unpkg.com/vue@3.4.0/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; padding: 0; background-color: #000; overflow: hidden; touch-action: none; }
+        canvas { display: block; margin: 0 auto; }
+        .menu-card { background: rgba(0, 0, 0, 0.9); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.15); }
+        input[type="range"] { -webkit-appearance: none; appearance: none; background: #333; height: 6px; border-radius: 3px; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; background: #fff; border-radius: 50%; }
+    </style>
+</head>
+<body>
+<div id="app" class="relative w-screen h-screen overflow-hidden" :style="{ backgroundColor: settings.colors.bg }">
+    <div id="ui" class="absolute inset-0 z-10 pointer-events-none text-white p-6 flex flex-col justify-between select-none">
+        <div class="absolute bottom-4 left-6 opacity-30 text-[10px] font-bold tracking-widest uppercase pointer-events-none">
+            Version 1.0
+        </div>
+
+        <div v-if="gameState !== 'playing'" class="pointer-events-auto absolute inset-0 flex flex-col items-center justify-center bg-black/70 backdrop-blur-md">
+            <div class="menu-card flex flex-col items-center w-full max-w-sm gap-4 p-8 rounded-[2.5rem] shadow-2xl mx-4">
+                <h1 class="text-4xl font-black italic uppercase tracking-tighter text-center">Superbirdjumper3</h1>
+                <div v-if="gameState !== 'start'" class="text-center bg-white/5 w-full py-3 rounded-2xl border border-white/10">
+                    <p class="text-blue-400 text-[10px] font-bold uppercase tracking-widest mb-1">{{ gameState }}</p>
+                    <p class="text-3xl font-black italic">Score: {{ score }}</p>
+                </div>
+                <button @click="handlePrimary" class="w-full bg-white text-black py-4 rounded-xl text-xl font-black uppercase active:scale-95 transition-all shadow-xl">
+                    {{ gameState === 'paused' ? 'Resume' : 'Start Game' }}
+                </button>
+                <div class="grid grid-cols-2 gap-2 w-full">
+                    <button @click="view = view==='tuning'?'':'tuning'" :class="view==='tuning'?'bg-white text-black':'bg-white/10'" class="p-3 rounded-xl text-[10px] font-bold uppercase">Difficulty</button>
+                    <button @click="view = view==='style'?'':'style'" :class="view==='style'?'bg-white text-black':'bg-white/10'" class="p-3 rounded-xl text-[10px] font-bold uppercase">Style</button>
+                </div>
+                <div v-if="view === 'tuning'" class="w-full flex flex-col gap-4 p-4 bg-black/40 rounded-xl border border-white/5">
+                    <div class="grid grid-cols-4 gap-1 mb-1">
+                        <button v-for="(p, n) in presets" @click="applyDiff(n)" class="bg-white/10 p-2 rounded text-[7px] font-bold uppercase truncate">{{n}}</button>
+                    </div>
+                    <div v-for="f in fields" :key="f.k" class="flex flex-col gap-1">
+                        <div class="flex justify-between text-[10px] opacity-50 font-bold uppercase"><span>{{f.n}}</span><span>{{settings[f.k]}}{{f.u}}</span></div>
+                        <input type="range" v-model.number="settings[f.k]" :min="f.min" :max="f.max">
+                    </div>
+                </div>
+                <div v-if="view === 'style'" class="w-full flex flex-col gap-3 p-4 bg-black/40 rounded-xl border border-white/5">
+                    <div class="grid grid-cols-2 gap-2 text-[8px] font-bold uppercase mb-2">
+                        <div v-for="(c, p) in settings.colors" :key="p">
+                            {{p}}<input v-model="settings.colors[p]" @input="refresh" class="w-full bg-black border border-white/20 rounded mt-1 text-center py-2 uppercase outline-none">
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-4 gap-1">
+                        <button v-for="t in themes" @click="applyStyle(t)" class="bg-white/10 p-2 rounded text-[8px] font-bold uppercase border border-white/5 hover:bg-white/20">{{t}}</button>
+                    </div>
+                </div>
+                <button @click="resetConfig" class="text-[9px] text-white/20 uppercase font-bold tracking-widest hover:text-white mt-2">Factory Reset</button>
+            </div>
+            <div class="mt-8 text-center pointer-events-auto">
+                <p class="text-white font-black italic uppercase text-2xl leading-none">Luca's Website</p>
+                <a href="https://sites.google.com/view/codyferd" target="_blank" class="text-white/40 text-[10px] font-bold hover:text-white uppercase tracking-widest">sites.google.com/view/codyferd</a>
+            </div>
+        </div>
+        <div v-if="gameState === 'playing'" class="flex justify-between items-start pointer-events-none">
+            <div>
+                <div class="text-5xl font-black italic tracking-tighter">SCORE: {{ score }}</div>
+                <div class="text-yellow-400 text-xs font-bold uppercase tracking-widest mt-1">BEST: {{ highScore }}</div>
+            </div>
+            <button @click="togglePause" class="pointer-events-auto bg-white/10 p-4 rounded-2xl border border-white/10 active:scale-90"><svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg></button>
+        </div>
+        <div v-if="gameState === 'playing'" class="pointer-events-auto flex flex-col gap-4 mb-4 ml-4">
+            <button @touchstart.prevent="btn.u=true" @touchend.prevent="btn.u=false" @mousedown="btn.u=true" @mouseup="btn.u=false" class="w-20 h-20 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center active:bg-white/40 shadow-2xl">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="4"><path d="M5 15l7-7 7 7"/></svg>
+            </button>
+            <button @touchstart.prevent="btn.d=true" @touchend.prevent="btn.d=false" @mousedown="btn.d=true" @mouseup="btn.d=false" class="w-20 h-20 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center active:bg-white/40 shadow-2xl">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="4"><path d="M19 9l-7 7-7-7"/></svg>
+            </button>
+        </div>
+    </div>
+    <div id="game-container" class="absolute inset-0 z-0"></div>
+</div>
+
+<script>
+const { createApp } = Vue;
+const D = { gapSize: 160, extremity: 40, speedStep: 0, enemyIntensity: 0, colors: { bird: '#f1c40f', pipe: '#2ecc71', enemy: '#ff4444', bg: '#000000' }};
+
+class MainGame extends Phaser.Scene {
+    constructor() { super('MainGame'); }
+    create() {
+        this.score = 0; this.spd = 500;
+        this.cameras.main.setBackgroundColor(v.settings.colors.bg);
+        this.gen();
+        this.pts = this.add.particles(0, 0, 'bird', { speed: 80, scale: { start: 0.3, end: 0 }, alpha: { start: 0.5, end: 0 }, lifespan: 400, blendMode: 'ADD' });
+        this.bird = this.physics.add.sprite(200, this.scale.height/2, 'bird').setCollideWorldBounds(true);
+        this.bird.body.allowGravity = false; this.pts.startFollow(this.bird);
+        this.pipes = this.physics.add.group(); this.enemies = this.physics.add.group();
+        for (let i = 0; i < 6; i++) this.addP(800 + i*500);
+        this.physics.add.collider(this.bird, this.pipes, () => this.die());
+        this.physics.add.overlap(this.bird, this.enemies, () => this.die());
+        this.keys = this.input.keyboard.addKeys('A,D');
+        this.time.addEvent({ delay: 10000, callback: () => { if(v.gameState==='playing') this.spd += v.settings.speedStep; }, loop: true });
+        this.time.addEvent({ delay: 2000, callback: () => this.addE(), loop: true });
+        if (v.gameState !== 'playing') this.scene.pause();
+    }
+    gen() {
+        const c = v.settings.colors; const h = (s) => parseInt(s.replace('#','0x')) || 0xffffff; let g = this.make.graphics({ x:0,y:0,add:false });
+        g.fillStyle(h(c.bird)).fillRect(0,0,32,32).generateTexture('bird',32,32);
+        g.clear().fillStyle(h(c.pipe)).fillRect(0,0,60,1200).generateTexture('pipe',60,1200);
+        g.clear().fillStyle(h(c.enemy)).fillRect(0,0,32,32).generateTexture('enemy',32,32);
+    }
+    addP(x) {
+        const gap = v.settings.gapSize, ext = v.settings.extremity/100, b = (this.scale.height/2)-(gap/2)-50;
+        const y = (this.scale.height/2) + Phaser.Math.Between(-b*ext, b*ext);
+        let t = this.pipes.create(x, y-gap/2, 'pipe').setOrigin(0.5, 1), bot = this.pipes.create(x, y+gap/2, 'pipe').setOrigin(0.5, 0);
+        [t,bot].forEach(p => { p.body.allowGravity=false; p.setVelocityX(-this.spd); }); t.ok = false;
+    }
+    addE() {
+        if (v.gameState!=='playing' || v.settings.enemyIntensity===0) return;
+        let e = this.enemies.create(this.scale.width+100, Phaser.Math.Between(100, this.scale.height-100), 'enemy');
+        e.body.allowGravity=false; e.setVelocityX(-(this.spd+200)); e.iq = v.settings.enemyIntensity;
+    }
+    die() { v.gameState = 'gameover'; this.scene.pause(); }
+    update(t) {
+        if (v.gameState !== 'playing') return;
+        const up = this.keys.A.isDown || v.btn.u; const down = this.keys.D.isDown || v.btn.d;
+        this.bird.setVelocityY(up ? -1000 : (down ? 1000 : 0));
+        this.pipes.getChildren().forEach(p => {
+            p.setVelocityX(-this.spd);
+            if (p.originY===1 && !p.ok && p.x < this.bird.x) { p.ok=true; v.score++; }
+            if (p.x < -100) { if(p.originY===1) this.addP(p.x+3000); p.destroy(); }
+        });
+        this.enemies.getChildren().forEach(e => {
+            if (e.iq > 50) e.setVelocityY(Phaser.Math.Clamp(this.bird.y-e.y, -450, 450));
+            else e.setVelocityY(Math.sin(t/200)*e.iq*10);
+            if (e.x < -200) e.destroy();
+        });
+    }
+}
+const v = createApp({
+    data() { return {
+        gameState: 'start', score: 0, high: localStorage.getItem('sbj3_hi')||0, view: '', btn: {u:false,d:false},
+        settings: JSON.parse(localStorage.getItem('sbj3_cfg')) || JSON.parse(JSON.stringify(D)),
+        fields: [{n:'Gap Size',k:'gapSize',min:100,max:400,u:'px'},{n:'Enemy Intensity',k:'enemyIntensity',min:0,max:100,u:'%'},{n:'Pipe Extremity',k:'extremity',min:0,max:100,u:'%'},{n:'Speed Boost',k:'speedStep',min:0,max:100,u:''}],
+        themes: ['classic','neon','dark','synth'],
+        presets: {'Classic':D, 'Zen':{gapSize:250,extremity:20,speedStep:0,enemyIntensity:0}, 'Chaos':{gapSize:160,extremity:100,speedStep:20,enemyIntensity:20}, 'Hard':{gapSize:100,extremity:100,speedStep:50,enemyIntensity:100}}
+    }},
+    computed: { highScore() { return this.high; } },
+    watch: { score(n){ if(n>this.high){this.high=n; localStorage.setItem('sbj3_hi',n)}}, settings:{handler(){localStorage.setItem('sbj3_cfg',JSON.stringify(this.settings))},deep:true}},
+    methods: {
+        refresh() {
+            const s = this.game.scene.getScene('MainGame'); if(!s) return;
+            s.cameras.main.setBackgroundColor(this.settings.colors.bg);
+            ['bird','pipe','enemy'].forEach(k => { if(s.textures.exists(k)) s.textures.remove(k); });
+            s.gen(); s.bird.setTexture('bird'); s.pts.texture = s.textures.get('bird');
+            s.pipes.getChildren().forEach(p => p.setTexture('pipe')); s.enemies.getChildren().forEach(e => e.setTexture('enemy'));
+        },
+        applyStyle(t) {
+            const themes = {
+                classic: { bird: '#f1c40f', pipe: '#2ecc71', enemy: '#ff4444', bg: '#000000' },
+                neon: { bird: '#00ffff', pipe: '#ff00ff', enemy: '#ffff00', bg: '#1a0033' },
+                dark: { bird: '#ffffff', pipe: '#444444', enemy: '#ff0000', bg: '#000000' },
+                synth: { bird: '#ff0080', pipe: '#00ffcc', enemy: '#ffffff', bg: '#110022' }
+            };
+            this.settings.colors = {...themes[t]}; this.refresh();
+        },
+        applyDiff(n) { this.settings = {...this.settings, ...JSON.parse(JSON.stringify(this.presets[n]))}; },
+        handlePrimary() {
+            if (this.gameState==='paused') { this.gameState='playing'; this.game.scene.resume('MainGame'); }
+            else { this.score=0; this.gameState='playing'; this.game.scene.getScene('MainGame').scene.restart(); }
+        },
+        togglePause() { if(this.gameState==='playing'){this.gameState='paused'; this.game.scene.pause('MainGame');} else this.handlePrimary(); },
+        resetConfig() { localStorage.removeItem('sbj3_cfg'); location.reload(); }
+    },
+    mounted() {
+        this.game = new Phaser.Game({ type:Phaser.AUTO, parent:'game-container', width:window.innerWidth, height:window.innerHeight, scale:{mode:Phaser.Scale.RESIZE,autoCenter:Phaser.Scale.CENTER_BOTH}, physics:{default:'arcade'}, scene:MainGame });
+        window.addEventListener('pointerup', () => { this.btn.u = this.btn.d = false; });
+    }
+}).mount('#app');
+</script>
+</body>
+</html>
+1
